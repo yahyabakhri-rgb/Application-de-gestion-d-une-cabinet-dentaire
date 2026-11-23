@@ -1,0 +1,630 @@
+\documentclass[11pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{lmodern}
+\usepackage{geometry}
+\geometry{margin=2.2cm}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{longtable}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=blue}
+\lstset{language=Java,basicstyle=\ttfamily\small,keywordstyle=\color{blue!70!black},commentstyle=\color{green!40!black},stringstyle=\color{red!60!black},breaklines=true,frame=single,showstringspaces=false,tabsize=4}
+\title{Guide complet du projet \texttt{cabinet3}\\Gestion d'un cabinet dentaire}
+\author{Documentation pédagogique du code source}
+\date{26 octobre 2026}
+\begin{document}
+\maketitle
+\tableofcontents
+
+\chapter{But et limites de ce guide}
+Ce document explique le projet Java \texttt{cabinet3} tel qu'il est organisé dans le dossier \texttt{src/ma/emi/cabinet}. Il présente les packages, tous les fichiers Java, les méthodes importantes, les gestionnaires d'événements de l'interface, ainsi que les concepts Java et JavaFX employés. Il explique aussi l'enregistrement du choix \texttt{Normal/Urgence} du patient.
+
+Les noms décrits ici correspondent au code de ce projet. Certaines fonctions sont appelées directement par JavaFX à la suite d'un clic ou au démarrage. Les méthodes des classes de modèle qui ne font que lire ou modifier une propriété sont expliquées individuellement dans la section des modèles.
+
+\chapter{Carte du projet}
+Un \emph{package} est un espace de noms qui rassemble des classes liées par leur rôle. Dans ce projet, chaque dossier sous \texttt{src/ma/emi/cabinet} correspond à un package Java.
+\begin{description}[leftmargin=3.2cm,style=nextline]
+\item[\texttt{ma.emi.cabinet}] Lancement de l'application.
+\item[\texttt{ma.emi.cabinet.ui}] Pages et composants de l'interface JavaFX.
+\item[\texttt{ma.emi.cabinet.service}] Règles métier, contrôle des saisies et scénarios d'utilisation.
+\item[\texttt{ma.emi.cabinet.model}] Objets qui représentent patients, dentistes, actes, créneaux et rendez-vous.
+\item[\texttt{ma.emi.cabinet.model.enums}] Valeurs autorisées pour les états des rendez-vous.
+\item[\texttt{ma.emi.cabinet.persistence}] Stockage en mémoire, accès aux objets et fichiers CSV.
+\item[\texttt{ma.emi.cabinet.exception}] Erreurs métier explicites.
+\item[\texttt{ma.emi.cabinet.util}] Petites fonctions communes.
+\end{description}
+
+Le parcours habituel d'une action est : une page \texttt{ui} recueille les choix, appelle un \texttt{service}, le service applique les règles et consulte un \texttt{repository}, puis le dépôt lit ou modifie les collections gérées par \texttt{DataStore}. Le stockage écrit les changements dans \texttt{data/*.csv}.
+
+\section{Fichiers non Java}
+\begin{description}[leftmargin=3.3cm,style=nextline]
+\item[\texttt{data/administrateurs.csv}] Comptes administrateurs : identifiant, nom, prénom, email et mot de passe.
+\item[\texttt{data/patients.csv}] Comptes et informations patient, avec CIN, téléphone et date de naissance.
+\item[\texttt{data/dentistes.csv}] Identité et coordonnées des dentistes.
+\item[\texttt{data/actes.csv}] Codes et libellés des soins, tarifs et durées.
+\item[\texttt{data/creneaux.csv}] Dentiste, date, horaires et date de réservation si le créneau est occupé.
+\item[\texttt{data/rendezvous.csv}] Liens par identifiants entre patient, acte et créneau, statut, notes et indicateur urgent.
+\item[\texttt{out/}] Classes compilées \texttt{.class}. Elles sont le résultat de la compilation des sources Java et ne sont pas les sources modifiables.
+\item[\texttt{documentation/}] Guides LaTeX du projet.
+\end{description}
+
+Les CSV sont des fichiers texte avec colonnes séparées par des points-virgules. Le programme les charge au lancement et les réécrit lors des sauvegardes. Pour le lancer avec la configuration utilisée ici, il faut le JDK et JavaFX ; depuis la racine du projet, le lancement emploie \texttt{out} comme chemin des classes et le dossier \texttt{lib} du SDK JavaFX comme chemin des modules.
+
+\chapter{Concepts Java essentiels}
+\section{Classe, objet, attribut et méthode}
+Une classe est le plan d'un objet. Par exemple, \texttt{Patient} décrit quelles informations possède un patient. Une instance est un patient concret créé avec \texttt{new Patient(...)}. Les données portées par l'instance sont les attributs (nom, email, CIN). Une méthode est une opération attachée à une classe ou à un objet (par exemple \texttt{patient.getCin()}).
+
+Le constructeur porte le nom de la classe et n'a pas de type de retour. Il initialise l'objet. Le mot-clé \texttt{this} indique l'instance courante ; \texttt{this.nom = nom} copie le paramètre \texttt{nom} dans l'attribut \texttt{nom}.
+
+\section{Visibilité, héritage et abstraction}
+\texttt{private} masque un attribut aux autres classes ; \texttt{public} rend une méthode accessible depuis les autres packages ; \texttt{protected} permet notamment à une sous-classe ou aux classes du package d'accéder à un membre. L'encapsulation consiste à garder les données internes protégées et à exposer des méthodes contrôlées pour les lire ou les modifier.
+
+\texttt{extends} exprime l'héritage. Ainsi \texttt{Patient extends Utilisateur} réutilise les informations communes d'un utilisateur. \texttt{super(...)} appelle le constructeur parent. \texttt{@Override} indique que la méthode redéfinit une méthode héritée. Le polymorphisme permet d'appeler une même méthode sur une référence parent tout en exécutant la version de la classe concrète.
+
+Une classe \texttt{abstract} ne s'instancie pas directement. Une méthode abstraite n'a pas de corps et impose aux sous-classes de la définir. Une \texttt{interface} est un contrat de méthodes qu'une classe peut implémenter. Une \texttt{enum} limite une valeur à un ensemble fixe de constantes.
+
+\section{Types et signatures}
+Une signature comme \texttt{public List<Patient> lister()} se lit ainsi : \texttt{public} est la visibilité, \texttt{List<Patient>} le type renvoyé, \texttt{lister} le nom, et \texttt{()} signifie qu'il n'y a aucun paramètre. Dans \texttt{ajouter(String nom, int age)}, les paramètres sont les entrées de la méthode.
+
+\texttt{void} veut dire qu'aucune valeur n'est renvoyée. \texttt{return valeur} termine la méthode et fournit son résultat. Les types primitifs utilisés incluent \texttt{long} (entier), \texttt{int} (entier), \texttt{double} (nombre décimal), et \texttt{boolean} (vrai/faux). \texttt{String} désigne du texte. \texttt{LocalDate}, \texttt{LocalTime} et \texttt{LocalDateTime} représentent respectivement une date, une heure et une date avec heure.
+
+\texttt{List<T>} est une liste typée. Le \texttt{T} est un paramètre générique qui représente le type des objets de la liste. \texttt{Long} est la version objet de \texttt{long} et peut être utilisée comme paramètre générique. \texttt{null} signifie qu'aucune référence d'objet n'est fournie.
+
+\section{Conditions, boucles et opérateurs}
+\texttt{if/else} choisit un chemin d'exécution selon une condition. \texttt{for} répète un bloc, souvent une fois par élément d'une liste. \texttt{!} signifie « non », \texttt{\&\&} signifie « et », et \texttt{||} signifie « ou ». Pour les chaînes, \texttt{equals} compare le contenu ; \texttt{==} compare souvent des nombres primitifs ou l'identité de deux références.
+
+Une expression ternaire comme \texttt{condition ? valeurA : valeurB} choisit une valeur selon une condition. Une lambda telle que \texttt{e -> remplir()} fournit un petit gestionnaire à exécuter plus tard. Les accolades \texttt{\{} et \texttt{\}} délimitent un bloc ; le point-virgule termine une instruction.
+
+\section{Exceptions et concurrence}
+Une exception représente une erreur qui empêche l'opération demandée. \texttt{throw new ValidationException(...)} signale une erreur. \texttt{throws ValidationException} dans la signature annonce que l'erreur peut remonter à l'appelant. \texttt{try/catch} permet de l'intercepter et d'afficher une alerte plutôt que de laisser l'application s'arrêter.
+
+\texttt{synchronized (VERROU)} protège une section critique : une seule exécution concurrente peut modifier le même état à la fois. Cela est particulièrement important pour empêcher que deux réservations prennent le même créneau simultanément.
+
+\section{Conventions des getters/setters}
+Un getter comme \texttt{getTarif()} renvoie un attribut ; un setter comme \texttt{setTarif(double tarif)} le modifie. \texttt{isUrgent()} est un getter booléen. JavaFX peut aussi utiliser les getters pour remplir automatiquement une colonne de tableau grâce à \texttt{PropertyValueFactory}.
+
+\chapter{JavaFX : comment les fenêtres fonctionnent}
+JavaFX est la bibliothèque qui dessine l'application. Un \texttt{Stage} est la fenêtre native ; une \texttt{Scene} est le contenu de cette fenêtre ; les \texttt{Node} sont les éléments visuels. \texttt{Label} montre du texte, \texttt{TextField} saisit du texte, \texttt{PasswordField} masque la saisie, \texttt{Button} lance une action, \texttt{ComboBox} offre une liste de choix, et \texttt{TableView} affiche des lignes.
+
+\texttt{VBox} place ses enfants verticalement, \texttt{HBox} horizontalement et \texttt{GridPane} dans des cellules ligne/colonne. \texttt{setOnAction(e -> ...)} enregistre une fonction qui sera appelée au clic ou lors d'un changement de sélection. L'événement est reçu dans le paramètre \texttt{e}.
+
+Les classes anonymes de \texttt{PatientPage} qui redéfinissent \texttt{updateItem} personnalisent l'affichage des lignes de la liste des créneaux. La cellule du menu est verte pour indiquer un créneau libre ; la valeur choisie est bleue. Le choix de type Normal/Urgence est coloré vert/orange. Le planning admin colorie les créneaux libres en vert, réservés normaux en rouge, réservés urgents en orange.
+
+\chapter{Lecture du programme au démarrage}
+\section{\texttt{Launcher.java}}
+Package : \texttt{ma.emi.cabinet}. Cette classe est le point d'entrée.
+\begin{description}[leftmargin=3.1cm,style=nextline]
+\item[\texttt{main(String[] args)}] Java appelle cette méthode en premier. Elle lance \texttt{DonneesInitiales.chargerSiBesoin()} dans un \texttt{try/catch}, puis lance le cycle de vie JavaFX avec \texttt{Application.launch(MainApp.class, args)}. \texttt{String[]} est le tableau des arguments de commande.
+\end{description}
+
+\section{\texttt{MainApp.java}}
+Package : \texttt{ma.emi.cabinet.ui}. Cette classe étend \texttt{Application}, classe de base JavaFX.
+\begin{description}[leftmargin=3.1cm,style=nextline]
+\item[\texttt{start(Stage stage)}] JavaFX appelle cette méthode après son démarrage. Elle donne le titre à la fenêtre, demande à \texttt{LoginPage} de créer la connexion, puis rend la fenêtre visible.
+\end{description}
+
+\chapter{Package \texttt{model} : les objets métier}
+\section{\texttt{Utilisateur.java}}
+Classe abstraite contenant les informations partagées des comptes : id, nom, prénom, email et mot de passe.
+\begin{description}[leftmargin=3.5cm,style=nextline]
+\item[\texttt{Utilisateur(...)}] Constructeur parent ; initialise les cinq attributs communs.
+\item[\texttt{getRole()}] Méthode abstraite. Chaque type de compte doit dire quel rôle il représente.
+\item[\texttt{getNomComplet()}] Assemble le prénom et le nom avec un espace.
+\item[\texttt{getId()}, \texttt{getNom()}, \texttt{getPrenom()}, \texttt{getEmail()}, \texttt{getMotDePasse()}] Renvoyent chaque information personnelle.
+\item[\texttt{setNom(nom)}, \texttt{setPrenom(prenom)}, \texttt{setEmail(email)}, \texttt{setMotDePasse(mdp)}] Remplacent la valeur correspondante. L'id ne possède pas de setter, car il sert d'identité stable.
+\item[\texttt{toString()}] Produit le nom complet pour affichage ou sélection.
+\end{description}
+
+\section{\texttt{Administrateur.java}}
+Sous-classe de \texttt{Utilisateur}, sans attribut supplémentaire.
+\begin{description}[leftmargin=3.5cm,style=nextline]
+\item[\texttt{Administrateur(...)}] Transmet les données communes au constructeur parent avec \texttt{super}.
+\item[\texttt{getRole()}] Renvoie le texte \texttt{Administrateur}. Le routage actuel de connexion utilise toutefois \texttt{instanceof}, pas ce getter.
+\end{description}
+
+\section{\texttt{Patient.java}}
+Sous-classe de \texttt{Utilisateur} avec CIN, téléphone et date de naissance.
+\begin{description}[leftmargin=3.5cm,style=nextline]
+\item[\texttt{Patient(...)}] Initialise d'abord les informations de compte dans \texttt{Utilisateur}, puis les attributs patient.
+\item[\texttt{getRole()}] Renvoie \texttt{Patient}.
+\item[\texttt{getCin()}, \texttt{setCin(cin)}] Lisent ou modifient le CIN.
+\item[\texttt{getTelephone()}, \texttt{setTelephone(telephone)}] Lisent ou modifient le numéro de téléphone.
+\item[\texttt{getDateNaissance()}, \texttt{setDateNaissance(date)}] Lisent ou modifient la date de naissance.
+\item[\texttt{toString()}] Affiche nom complet et CIN.
+\end{description}
+
+\section{\texttt{Dentiste.java}}
+Modèle d'un dentiste avec id, nom, prénom, spécialité et téléphone.
+\begin{description}[leftmargin=3.5cm,style=nextline]
+\item[\texttt{Dentiste(...)}] Initialise les cinq attributs.
+\item[\texttt{getNomComplet()}] Forme le nom affiché avec le titre \texttt{Dr}.
+\item[\texttt{getId()}, \texttt{getNom()}, \texttt{getPrenom()}, \texttt{getSpecialite()}, \texttt{getTelephone()}] Renvoyent les données correspondantes.
+\item[\texttt{setNom(...)}, \texttt{setPrenom(...)}, \texttt{setSpecialite(...)}, \texttt{setTelephone(...)}] Modifient les informations. L'id ne change pas.
+\item[\texttt{toString()}] Renvoie le nom complet pour les listes déroulantes.
+\end{description}
+
+\section{\texttt{Acte.java}}
+Modèle d'un soin : identifiant, code, libellé, tarif et durée en minutes.
+\begin{description}[leftmargin=3.5cm,style=nextline]
+\item[\texttt{Acte(...)}] Initialise les cinq attributs.
+\item[\texttt{getId()}, \texttt{getCode()}, \texttt{getLibelle()}, \texttt{getTarif()}, \texttt{getDureeMinutes()}] Lisent les valeurs du soin.
+\item[\texttt{setCode(...)}, \texttt{setLibelle(...)}, \texttt{setTarif(...)}, \texttt{setDureeMinutes(...)}] Modifient les valeurs éditables. L'id ne change pas.
+\item[\texttt{toString()}] Formate le code, libellé, prix et durée pour une liste de choix.
+\end{description}
+
+\section{\texttt{Creneau.java}}
+Plage horaire libre initiale rattachée à un dentiste, une date, une heure de début et une heure de fin.
+\begin{description}[leftmargin=3.5cm,style=nextline]
+\item[\texttt{Creneau(...)}] Initialise l'id, le dentiste, la date et les deux heures.
+\item[\texttt{estReserve()}] Renvoie \texttt{false} dans la classe de base ; la sous-classe réservée redéfinit le résultat.
+\item[\texttt{getEtat()}] Fournit le libellé \texttt{Libre} pour l'affichage.
+\item[\texttt{getDureeMinutes()}] Calcule la différence entre les heures avec \texttt{Duration}.
+\item[\texttt{chevauche(autre)}] Renvoie vrai si les deux créneaux sont le même jour et si leurs intervalles temporels se recoupent.
+\item[\texttt{getId()}, \texttt{getDentiste()}, \texttt{getDate()}, \texttt{getHeureDebut()}, \texttt{getHeureFin()}] Renvoyent les éléments de la plage. Les valeurs ne sont pas exposées par des setters dans cette classe.
+\item[\texttt{toString()}] Formate date, heures, dentiste et état.
+\end{description}
+
+\section{\texttt{CreneauReserve.java}}
+Hérite de \texttt{Creneau}. Ajoute la date et l'heure où la réservation a été faite.
+\begin{description}[leftmargin=3.5cm,style=nextline]
+\item[\texttt{CreneauReserve(creneau, dateReservation)}] Copie l'identifiant, le dentiste, la date et les heures du créneau d'origine, puis mémorise la réservation.
+\item[\texttt{estReserve()}] Redéfinit le comportement pour renvoyer vrai.
+\item[\texttt{getEtat()}] Renvoie \texttt{Réservé}.
+\item[\texttt{liberer()}] Crée un nouveau \texttt{Creneau} libre avec le même identifiant et les mêmes horaires. Le rendez-vous historique reste dans la liste des rendez-vous.
+\item[\texttt{getDateReservation()}] Renvoie l'instant de réservation.
+\end{description}
+
+\section{\texttt{RendezVous.java}}
+Relie patient, acte, créneau réservé, statut, notes et indicateur urgent. Il conserve des références aux objets associés plutôt que de dupliquer leurs informations.
+\begin{description}[leftmargin=4.5cm,style=nextline]
+\item[\texttt{RendezVous(..., notes)}] Constructeur historique ; appelle le constructeur complet avec \texttt{urgent=false}, donc la réservation est normale par défaut.
+\item[\texttt{RendezVous(..., notes, urgent)}] Constructeur complet ; initialise toutes les relations, le statut, les notes et le type normal/urgent.
+\item[\texttt{estActif()}] Renvoie vrai si le statut est \texttt{EN\_ATTENTE} ou \texttt{VALIDE} ; ces états occupent encore le créneau.
+\item[\texttt{getDentiste()}] Suit la relation rendez-vous vers créneau puis dentiste.
+\item[\texttt{getDate()}, \texttt{getHeure()}] Renvoient date et heure de début depuis le créneau.
+\item[\texttt{getNomPatient()}, \texttt{getNomActe()}, \texttt{getNomDentiste()}] Fournissent les chaînes prêtes à afficher dans les colonnes JavaFX.
+\item[\texttt{getId()}, \texttt{getPatient()}, \texttt{getActe()}, \texttt{getCreneau()}, \texttt{getStatut()}, \texttt{getNotes()}] Renvoient identifiant, relations ou propriétés correspondantes.
+\item[\texttt{setStatut(statut)}, \texttt{setNotes(notes)}] Modifient le statut et le texte de notes.
+\item[\texttt{isUrgent()}] Renvoie vrai lorsque le rendez-vous est une urgence.
+\item[\texttt{getType()}] Renvoie le texte \texttt{Urgence} ou \texttt{Normal}, notamment pour la colonne de tableau.
+\item[\texttt{toString()}] Produit une ligne textuelle résumant date, heure, patient, acte, dentiste et statut.
+\end{description}
+
+\section{\texttt{StatutRendezVous.java}}
+Énumération des états autorisés. \texttt{EN\_ATTENTE} est une demande créée ; \texttt{VALIDE} est confirmée ; \texttt{TERMINE} signifie que le soin est réalisé ; \texttt{ANNULE} marque une annulation.
+\begin{description}[leftmargin=3.5cm,style=nextline]
+\item[Constructeur privé \texttt{StatutRendezVous(libelle)}] Associe le texte lisible à chacune des constantes.
+\item[\texttt{toString()}] Renvoie le libellé français, par exemple \texttt{Validé}, au lieu du nom interne en majuscules.
+\end{description}
+
+\chapter{Package \texttt{exception} : erreurs contrôlées}
+Toutes ces erreurs héritent de \texttt{Exception} directement ou indirectement. Les services les lancent lorsque les règles métier ne sont pas satisfaites ; les pages les interceptent pour afficher leur message.
+\begin{description}[leftmargin=4.6cm,style=nextline]
+\item[\texttt{CabinetException.java}] Exception parent des erreurs métier. Son constructeur \texttt{CabinetException(String message)} transmet le message à \texttt{Exception} avec \texttt{super(message)}.
+\item[\texttt{ValidationException.java}] Erreur de saisie ou de contrainte. Son constructeur reçoit un message puis appelle le constructeur parent.
+\item[\texttt{ReservationException.java}] Erreur du flux de réservation : créneau occupé, passé, durée insuffisante, sélection manquante ou statut incorrect. Son constructeur transmet le texte au parent.
+\item[\texttt{AuthentificationException.java}] Erreur standard de connexion. Son constructeur fournit le message « Email ou mot de passe incorrect. ».
+\end{description}
+
+\chapter{Package \texttt{persistence} : fichiers et dépôts}
+\section{\texttt{DataStore.java}}
+Singleton de stockage : le programme partage une seule instance et des listes en mémoire. Cette classe convertit les objets vers/depuis les CSV.
+\begin{description}[leftmargin=4.4cm,style=nextline]
+\item[Constructeur privé \texttt{DataStore()}] Appelle \texttt{charger()} à la création. Le mot \texttt{private} empêche les autres classes de fabriquer plusieurs magasins.
+\item[\texttt{getInstance()}] Crée la seule instance si elle n'existe pas, puis la renvoie. C'est le patron Singleton.
+\item[\texttt{nouvelId()}] Incrémente le dernier identifiant connu et renvoie le nouvel identifiant partagé.
+\item[\texttt{getAdministrateurs()}, \texttt{getPatients()}, \texttt{getDentistes()}, \texttt{getActes()}, \texttt{getCreneaux()}, \texttt{getRendezVous()}] Fournissent les listes en mémoire à chaque dépôt.
+\item[\texttt{charger()}] Lit les CSV dans un ordre qui permet de reconstruire les liens : d'abord les objets indépendants, ensuite les créneaux, puis les rendez-vous. Les identifiants sont convertis en objets grâce à des \texttt{Map}. Les lignes de rendez-vous anciennes sans colonne \texttt{urgent} reçoivent \texttt{false}.
+\item[\texttt{lireFichier(nom)}] Cherche le fichier sous \texttt{data}, ignore l'en-tête, découpe chaque ligne sur \texttt{;} et conserve les colonnes vides. Si le fichier n'existe pas, renvoie une liste vide.
+\item[\texttt{sauvegarder()}] Construit une liste de chaînes pour chaque type d'objet et demande l'écriture des fichiers. La colonne finale \texttt{urgent} de rendezvous.csv préserve le choix Urgence/Normal.
+\item[\texttt{ecrireFichier(nom, entete, lignes)}] Crée le dossier si besoin, puis écrit l'en-tête et chaque ligne. Une erreur d'entrée/sortie est rapportée dans la console.
+\item[\texttt{texte(valeur)}] Remplace les points-virgules et retours de ligne qui casseraient les colonnes ; renvoie une chaîne vide pour \texttt{null}.
+\end{description}
+
+\section{\texttt{Repository.java} et \texttt{AbstractRepository.java}}
+\texttt{Repository<T, ID>} est un contrat générique de dépôt. Ses signatures sont \texttt{lister()}, \texttt{trouverParId(id)}, \texttt{ajouter(objet)}, \texttt{supprimer(objet)} et \texttt{sauvegarder()}. \texttt{T} est le type d'entité et \texttt{ID} son type d'identifiant.
+
+\texttt{AbstractRepository<T, ID>} met en commun le code : \texttt{liste()} et \texttt{getId(objet)} sont abstraites et chaque dépôt concret les implémente ; \texttt{lister()} renvoie une copie de la liste ; \texttt{trouverParId(id)} cherche l'identifiant correspondant ; \texttt{ajouter(objet)} et \texttt{supprimer(objet)} modifient la collection puis sauvegardent ; \texttt{sauvegarder()} transmet l'appel au magasin ; \texttt{nouvelId()} demande un identifiant au magasin.
+
+\section{Dépôts spécialisés}
+\begin{description}[leftmargin=5cm,style=nextline]
+\item[\texttt{AdministrateurRepository.java}] \texttt{liste()} renvoie la liste admin du magasin ; \texttt{getId(admin)} fournit son id. Il hérite des opérations CRUD génériques.
+\item[\texttt{PatientRepository.java}] \texttt{liste()} et \texttt{getId(patient)} raccordent les opérations génériques aux patients ; \texttt{trouverParCin(cin)} recherche un patient sans différencier la casse.
+\item[\texttt{DentisteRepository.java}] \texttt{liste()} et \texttt{getId(dentiste)} raccordent le type Dentiste au dépôt parent.
+\item[\texttt{ActeRepository.java}] \texttt{liste()} et \texttt{getId(acte)} raccordent le type Acte ; \texttt{trouverParCode(code)} recherche par code métier.
+\item[\texttt{CreneauRepository.java}] \texttt{liste()} et \texttt{getId(creneau)} raccordent le type Creneau ; \texttt{trouverParDentiste(dentiste)} filtre les créneaux ; \texttt{remplacer(nouveau)} substitue dans la liste un créneau ayant le même id, notamment lors d'une réservation ou libération.
+\item[\texttt{RendezVousRepository.java}] \texttt{liste()} et \texttt{getId(rdv)} raccordent le type RendezVous ; \texttt{trouverParPatient(patient)} filtre l'historique ; \texttt{existePourActe(acte)} et \texttt{existePourCreneau(creneau)} détectent les références avant suppression.
+\end{description}
+
+\chapter{Package \texttt{util}}
+\section{\texttt{Validation.java}}
+Classe d'utilitaires sans état propre.
+\begin{description}[leftmargin=4cm,style=nextline]
+\item[\texttt{verifierRempli(valeur, champ)}] Refuse une chaîne nulle ou vide après \texttt{trim()}, qui supprime les espaces de bord. Sinon, renvoie le texte nettoyé. Le type \texttt{String} renvoyé permet au service de réutiliser directement la valeur vérifiée.
+\end{description}
+
+\chapter{Package \texttt{service} : règles métier, méthode par méthode}
+\section{\texttt{AuthService.java}}
+\begin{description}[leftmargin=4.4cm,style=nextline]
+\item[Constantes \texttt{ADMIN\_EMAIL}, \texttt{ADMIN\_MOT\_DE\_PASSE}] Identifiants de démonstration utilisés pour créer le compte initial.
+\item[\texttt{connecter(email, motDePasse)}] Parcourt la liste des administrateurs puis celle des patients. L'email est comparé sans tenir compte de la casse ; si aucune paire email/mot de passe ne correspond, lance \texttt{AuthentificationException}.
+\item[\texttt{creerAdminParDefaut()}] Ne crée le compte de démonstration que si la liste des administrateurs est vide.
+\item[\texttt{verifierEmail(email, moi)}] Vérifie que le champ est présent, le convertit en minuscules, exige \texttt{@} et refuse un email déjà attribué à un autre compte. \texttt{moi} permet d'exclure de la recherche la personne en cours de modification.
+\end{description}
+
+\section{\texttt{PatientService.java}}
+\begin{description}[leftmargin=4.7cm,style=nextline]
+\item[\texttt{ajouter(nom, prenom, email, motDePasse, cin, telephone, dateNaissance)}] Nettoie les champs requis, valide l'email et le CIN, impose au moins quatre caractères de mot de passe, vérifie la date, crée l'objet avec un nouvel id et l'enregistre.
+\item[\texttt{modifier(patient, ...)}] Refuse une sélection nulle, contrôle toutes les nouvelles valeurs avant de modifier l'objet, puis sauvegarde.
+\item[\texttt{supprimer(patient)}] Refuse une sélection absente et un patient qui possède des rendez-vous ; sinon supprime.
+\item[\texttt{lister()}] Renvoie les patients triés par nom sans distinguer la casse.
+\item[\texttt{verifierCin(cin, moi)}] Nettoie et met le CIN en majuscules, puis empêche les doublons.
+\item[\texttt{verifierDateNaissance(date)}] Refuse une date de naissance dans le futur ; accepte une valeur nulle pour les dossiers où elle n'est pas renseignée.
+\end{description}
+
+\section{\texttt{DentisteService.java}}
+\begin{description}[leftmargin=4.4cm,style=nextline]
+\item[\texttt{ajouter(nom, prenom, specialite, telephone)}] Exige nom et prénom, crée un dentiste identifié, l'ajoute au dépôt et le renvoie.
+\item[\texttt{modifier(dentiste, ...)}] Vérifie la sélection et les champs obligatoires, modifie les informations et sauvegarde.
+\item[\texttt{supprimer(dentiste)}] Refuse une sélection nulle ou un dentiste ayant encore des créneaux.
+\item[\texttt{lister()}] Renvoie la liste triée par nom.
+\end{description}
+
+\section{\texttt{ActeService.java}}
+\begin{description}[leftmargin=4.5cm,style=nextline]
+\item[\texttt{ajouter(code, libelle, tarif, dureeMinutes)}] Valide l'unicité du code, le libellé, le prix et la durée ; crée, enregistre et renvoie l'acte.
+\item[\texttt{modifier(acte, ...)}] Refuse une sélection nulle, vérifie les valeurs puis met à jour et sauvegarde.
+\item[\texttt{supprimer(acte)}] Refuse un acte présent dans un rendez-vous ; sinon le retire.
+\item[\texttt{lister()}] Trie les actes par code.
+\item[\texttt{verifierCode(code, moi)}] Retire les espaces, met le code en majuscules et refuse un doublon autre que l'acte modifié.
+\item[\texttt{verifierTarifEtDuree(tarif, duree)}] Exige un tarif supérieur ou égal à zéro et une durée strictement positive.
+\end{description}
+
+\section{\texttt{CreneauService.java}}
+\begin{description}[leftmargin=4.6cm,style=nextline]
+\item[\texttt{ajouter(dentiste, date, debut, fin)}] Vérifie les références, l'ordre des heures, la date non passée et les chevauchements du dentiste avant d'enregistrer le nouveau créneau.
+\item[\texttt{supprimer(creneau)}] Refuse la suppression si un rendez-vous conserve une référence vers ce créneau.
+\item[\texttt{lister()}] Renvoie tous les créneaux, triés par jour et heure.
+\item[\texttt{listerParDentiste(dentiste)}] Renvoie seulement les créneaux de ce dentiste et les trie.
+\item[\texttt{listerLibres(dentiste)}] Filtre les créneaux libres dont le début est après maintenant. La page patient utilise cette liste.
+\item[\texttt{trier(liste)}] Méthode interne comparant d'abord les dates, puis les heures de début.
+\end{description}
+
+\section{\texttt{ReservationService.java}}
+Cette classe porte les règles sensibles qui doivent rester cohérentes entre les écrans.
+\begin{description}[leftmargin=4.7cm,style=nextline]
+\item[\texttt{ajouterEcouteur(ecouteur)}] Ajoute un objet à prévenir quand les réservations changent.
+\item[\texttt{viderEcouteurs()}] Vide la liste statique des observateurs.
+\item[\texttt{notifierChangement()}] Appelle \texttt{reservationsModifiees()} pour chaque observateur inscrit.
+\item[\texttt{reserver(patient, acte, creneau, notes)}] Version habituelle ; délègue à la version complète avec \texttt{urgent=false} afin de préserver les anciens appels et les données de démonstration.
+\item[\texttt{reserver(patient, acte, creneau, notes, urgent)}] Vérifie les sélections, reprend le créneau à jour par id, refuse un créneau absent, déjà pris ou passé, vérifie la durée et les conflits du patient ; dans le verrou, remplace le créneau par un réservé et crée un rendez-vous en attente en conservant l'indicateur urgent.
+\item[\texttt{valider(rdv)}] Exige un rendez-vous sélectionné et à l'état en attente, passe le statut à validé, sauvegarde puis notifie les observateurs.
+\item[\texttt{annuler(rdv)}] Exige un rendez-vous actif, le passe à annulé et remplace le créneau occupé par sa version libre.
+\item[\texttt{terminer(rdv)}] Exige un rendez-vous validé, le passe à terminé et sauvegarde.
+\item[\texttt{rendezVousDuCreneau(creneau)}] Recherche un rendez-vous non annulé par id de créneau ; le planning utilise le résultat pour distinguer une urgence d'un rendez-vous normal.
+\item[\texttt{lister()}] Renvoie tous les rendez-vous triés par date.
+\item[\texttt{listerParPatient(patient)}] Renvoie et trie chronologiquement les rendez-vous du patient.
+\end{description}
+
+Le verrou est un objet statique partagé. Le mot-clé \texttt{synchronized} assure que deux clics ou fils d'exécution ne passent pas en même temps dans la portion qui vérifie puis occupe le créneau. C'est une protection contre la double réservation.
+
+\section{\texttt{DonneesInitiales.java}}
+\begin{description}[leftmargin=4.7cm,style=nextline]
+\item[\texttt{chargerSiBesoin()}] Crée l'admin de démonstration, puis si patients ou dentistes manquent, ajoute les données de test, une dizaine de jours ouvrés de créneaux et quelques rendez-vous. Elle appelle les services au lieu d'écrire directement dans les CSV.
+\item[\texttt{creerJournee(dentiste, jour, duree)}] Remplit la matinée et l'après-midi par intervalles de la durée donnée, sans dépasser les heures définies.
+\item[\texttt{trouverCreneau(dentiste, jour, heure)}] Cherche une plage précise pour associer un rendez-vous de démonstration.
+\end{description}
+
+\section{\texttt{FicheService.java}}
+\begin{description}[leftmargin=4.7cm,style=nextline]
+\item[\texttt{exporterPdf(rdv, destination)}] Refuse un rendez-vous absent ou non validé/terminé, crée un document et une page PDFBox, écrit les informations dans le flux de contenu, enregistre le fichier puis ferme les ressources.
+\end{description}
+PDFBox emploie \texttt{PDDocument} pour le document, \texttt{PDPage} pour la page et \texttt{PDPageContentStream} pour dessiner le texte. La version actuelle inclut patient, CIN, dentiste, acte, date, horaires, tarif et statut.
+
+\section{\texttt{EcouteurReservation.java}}
+Interface de notification. Elle déclare \texttt{reservationsModifiees()}, méthode qu'un écran observateur doit implémenter pour réagir à un changement. Le mécanisme permet un faible couplage : le service n'a pas besoin de connaître la classe d'écran exacte.
+
+\chapter{Package \texttt{ui} : chaque écran et ses actions}
+Dans les pages, les gestionnaires \texttt{setOnAction} sont des fonctions anonymes exécutées plus tard. Ils lisent les champs, appellent un service, interçoivent les erreurs métier via \texttt{catch}, puis actualisent la vue.
+
+\section{\texttt{LoginPage.java}}
+\texttt{afficher(stage)} construit la fenêtre de connexion, les étiquettes email/mot de passe et deux boutons. Le bouton Fermer appelle \texttt{stage.close()}. Le bouton Se connecter appelle \texttt{AuthService.connecter}. Si l'objet reçu est un \texttt{Administrateur}, la page ouvre \texttt{MenuPage}; sinon elle ouvre \texttt{PatientPage} avec le patient. Une exception de connexion est affichée dans une alerte.
+
+\section{\texttt{MenuPage.java}}
+\texttt{afficher(stage)} crée les boutons Patients, Dentistes, Actes, Emploi du temps, Rendez-vous et Déconnexion. Chaque bouton remplace la scène par la page voulue. La date et un texte d'accueil sont également affichés.
+
+\section{\texttt{PatientsPage.java}}
+\texttt{afficher(stage)} crée formulaire et table patient, puis configure les colonnes. Cliquer sur une ligne recopie les valeurs du patient dans le formulaire. Les gestionnaires Ajouter/Modifier/Supprimer appellent \texttt{PatientService} ; Actualiser recharge la liste ; Menu revient au menu principal.
+\texttt{actualiser()} vide puis remplit la table depuis \texttt{service.lister()} et efface les champs de formulaire.
+
+\section{\texttt{DentistesPage.java}}
+\texttt{afficher(stage)} construit les champs de nom, prénom, spécialité et téléphone, la table et ses boutons. Cliquer une ligne copie le dentiste sélectionné dans les champs. Ajouter/Modifier/Supprimer délèguent au service et montrent les erreurs. Menu revient au menu.
+\texttt{actualiser()} remplit la table avec les dentistes et remet les champs à zéro.
+
+\section{\texttt{ActesPage.java}}
+\texttt{afficher(stage)} construit le formulaire code, prix, libellé et durée et les colonnes code/libellé/tarif/durée. Les gestionnaires ajoutent, modifient ou suppriment en appelant \texttt{ActeService}. \texttt{Double.parseDouble} et \texttt{Integer.parseInt} convertissent les textes des champs ; \texttt{NumberFormatException} signale une entrée qui ne peut pas être convertie.
+\texttt{actualiser()} recharge la table et efface le formulaire.
+
+\section{\texttt{CreneauxPage.java}}
+\texttt{afficher(stage)} charge la liste des dentistes, installe les boutons de navigation de semaine et crée la grille. Le choix d'un dentiste et les boutons de semaine déclenchent \texttt{remplir()}.
+\texttt{remplir()} efface la grille, inscrit six jours (lundi à samedi) et vingt heures par pas de trente minutes. Il cherche le créneau qui commence dans chaque case. Une case sans créneau propose \texttt{+} ; un créneau libre affiche \texttt{LIBRE} en vert et peut être supprimé ; un rendez-vous normal affiche \texttt{RESERVE} en rouge ; une urgence affiche \texttt{URGENCE} en orange. Chaque modification reconstruit la grille.
+
+\section{\texttt{PatientPage.java}}
+\texttt{afficher(stage, patient)} reçoit le patient connecté. Elle charge les actes et dentistes dans les listes, crée les champs de créneau et de message et ajoute le choix de type \texttt{Normal/Urgence}. Le type par défaut est Normal. Quand le dentiste change, la liste est remplacée par ses créneaux libres futurs.
+
+Le \texttt{cellFactory} crée les cellules vertes du menu de créneaux ; le \texttt{buttonCell} affiche en bleu le créneau sélectionné. Le choix de type devient orange pour Urgence et vert pour Normal. Cliquer Réserver transmet le booléen urgent au service et recharge les données ; cliquer Annuler demande l'annulation du rendez-vous sélectionné ; Fiche appelle l'export PDF ; Déconnexion revient à la page de connexion.
+\texttt{actualiser()} remplit le tableau avec les rendez-vous du patient.
+
+\section{\texttt{RendezVousPage.java}}
+\texttt{afficher(stage)} configure le tableau (id, date, heure, patient, acte, dentiste, statut et type). Le bouton Valider appelle \texttt{service.valider}; Terminer appelle \texttt{service.terminer}; Annuler appelle \texttt{service.annuler}; Fiche lance l'export PDF ; Menu retourne au menu admin. Chaque opération métier est suivie d'un rafraîchissement ou d'une alerte.
+\texttt{actualiser()} recharge la liste complète de rendez-vous.
+
+\section{\texttt{Theme.java}}
+Boîte à outils graphique statique partagée par les pages.
+\begin{description}[leftmargin=4cm,style=nextline]
+\item[\texttt{titre(texte)}] Renvoie une étiquette avec le style de titre standard.
+\item[\texttt{champ(grille, texte, champ, colonne, ligne)}] Ajoute l'étiquette et le contrôle de saisie dans les cellules d'un GridPane.
+\item[\texttt{bouton(texte, couleur)}] Crée un bouton de dimensions et police standard, avec couleur de texte.
+\item[\texttt{panneau(elements...)}] Regroupe un nombre variable d'éléments dans une colonne grise.
+\item[\texttt{colonne(table, titre, propriete)}] Ajoute une colonne et relie sa valeur à un getter du modèle via \texttt{PropertyValueFactory}.
+\item[\texttt{page(gauche, droite, bas)}] Assemble les zones de contenu dans une scène de taille standard.
+\item[\texttt{alerte(message)}] Affiche une boîte de dialogue informative bloquante jusqu'à fermeture.
+\item[\texttt{fiche(stage, rdv)}] Demande le chemin d'enregistrement à l'utilisateur, puis appelle \texttt{FicheService.exporterPdf}. Si le dialogue est annulé, elle termine sans exporter.
+\end{description}
+
+\chapter{Parcours complet : réservation normale ou urgente}
+\begin{enumerate}
+\item \texttt{Launcher.main} initialise les données et JavaFX ouvre \texttt{LoginPage}.
+\item \texttt{AuthService.connecter} identifie le compte ; la page patient reçoit l'objet \texttt{Patient} connecté.
+\item \texttt{PatientPage} charge soins et dentistes ; le patient choisit un soin et un dentiste.
+\item \texttt{CreneauService.listerLibres} fournit uniquement les créneaux disponibles et non passés.
+\item Le patient choisit Normal ou Urgence. La page convertit Urgence en booléen vrai et appelle la surcharge de \texttt{ReservationService.reserver}.
+\item Le service verrouille la section critique, revérifie le créneau et la durée, puis crée un créneau réservé et un rendez-vous EN ATTENTE avec le booléen urgent.
+\item \texttt{DataStore.sauvegarder} écrit l'indicateur dans la dernière colonne du CSV des rendez-vous. Au redémarrage, \texttt{charger} la relit. Les anciennes lignes sans cette colonne sont normales par défaut.
+\item Le planning admin retrouve le rendez-vous par l'id du créneau. Il colore l'occupation normale en rouge et l'urgence en orange. Un créneau libre apparaît vert. Le choix courant du patient apparaît bleu dans sa liste.
+\item L'administrateur valide, annule ou termine via \texttt{RendezVousPage}. Une annulation remet le créneau à l'état libre.
+\end{enumerate}
+
+\chapter{Concepts de conception utilisés}
+\begin{description}[leftmargin=4cm,style=nextline]
+\item[Modèle--Service--Dépôt--Interface] Sépare données, règles, accès au stockage et affichage. Une règle n'a ainsi pas besoin d'être recopiée dans chaque bouton.
+\item[CRUD] Create/Read/Update/Delete : créer, lire, modifier et supprimer les entités. Les services appliquent les contraintes métier avant les dépôts.
+\item[Repository] Cache les détails de la collection et de la sauvegarde aux services. Les dépôts spécialisés donnent une interface homogène à chaque modèle.
+\item[Singleton] \texttt{DataStore.getInstance()} fournit un magasin partagé plutôt que plusieurs copies indépendantes des données.
+\item[Observateur] \texttt{EcouteurReservation} définit la notification d'écrans abonnés quand une réservation change. Le service déclenche les callbacks.
+\item[Héritage et polymorphisme] \texttt{CreneauReserve} hérite de \texttt{Creneau} et redéfinit état/réservation. Le code peut donc traiter les deux comme un \texttt{Creneau} et invoquer le comportement concret.
+\item[Référence par identifiant] Les CSV gardent des ids ; au chargement, des maps retrouvent l'objet associé. Cela reconstitue les liens sans recopier chaque fiche entière.
+\item[Persistance] La sauvegarde CSV conserve les données après fermeture. Sans base de données, le programme utilise les fichiers locaux et une liste mémoire durant l'exécution.
+\item[Validation métier] Les exceptions spécialisées empêchent d'enregistrer des données incohérentes et donnent un message exploitable à l'interface.
+\item[État] Le statut du rendez-vous modélise son évolution. Les méthodes du service autorisent seulement certaines transitions.
+\item[Couleurs d'état] Les couleurs sont un code visuel : vert = disponible, rouge = réservé normal, orange = urgent, bleu = sélection actuelle. Elles aident à comprendre le planning mais ne remplacent pas les vérifications du service.
+\end{description}
+
+
+\chapter{Explication approfondie des traitements}
+Ce chapitre complète le catalogue des méthodes avec les étapes internes. Le but est de répondre à deux questions pour chaque traitement important : quelles données entrent dans la méthode, et quelles données ou affichages en sortent ?
+
+\section{Lire une signature complète}
+Prenons cette signature du service de réservation :
+\begin{lstlisting}
+public RendezVous reserver(Patient patient, Acte acte,
+                           Creneau creneau, String notes,
+                           boolean urgent) throws ReservationException
+\end{lstlisting}
+\begin{enumerate}
+\item \texttt{public} : les pages et autres packages peuvent appeler la méthode.
+\item \texttt{RendezVous} : en cas de succès, la méthode renvoie l'objet rendez-vous créé.
+\item \texttt{reserver} : nom de l'action.
+\item \texttt{Patient}, \texttt{Acte}, \texttt{Creneau}, \texttt{String}, \texttt{boolean} : types des cinq paramètres.
+\item \texttt{throws ReservationException} : la réservation peut échouer pour une raison métier ; l'écran doit intercepter ce cas.
+\end{enumerate}
+Un appel ressemble à \texttt{service.reserver(patient, acte, plage, notes, estUrgent)}. Les variables entre parenthèses fournissent les valeurs qui seront utilisées dans le corps de la méthode. La méthode n'est pas une fonction mathématique pure : elle renvoie un objet, mais elle change également les listes en mémoire et les fichiers.
+
+\section{Démarrage étape par étape}
+\subsection{Pourquoi deux méthodes \texttt{main} et \texttt{start} ?}
+Le système d'exploitation démarre la machine virtuelle Java. Java recherche une méthode spéciale \texttt{public static void main(String[] args)}. Dans ce projet, elle se trouve dans \texttt{Launcher}. Son rôle est de faire le petit travail préparatoire, puis de transférer le contrôle à JavaFX. JavaFX utilise ensuite sa propre séquence de démarrage et appelle \texttt{MainApp.start(Stage stage)}. Ainsi, \texttt{main} démarre le processus, tandis que \texttt{start} construit la première fenêtre.
+
+\subsection{Chargement des données d'exemple}
+\texttt{DonneesInitiales.chargerSiBesoin()} demande au service d'authentification de créer l'administrateur standard s'il en manque un. Il vérifie ensuite si les listes patients et dentistes sont vides. Si elles ne le sont pas, il arrête la création des exemples pour éviter de les dupliquer. Sinon, il appelle les services pour ajouter des patients, dentistes, soins, plages horaires et rendez-vous. Chaque ajout passe donc par les mêmes contrôles et sauvegardes que les actions de l'interface.
+
+Le mot \texttt{new} crée l'objet de service ; l'opérateur point appelle ensuite une méthode : \texttt{new PatientService().ajouter(...)} signifie « construire un service patient, puis utiliser sa méthode d'ajout ». Les services ne sont pas des données : ils contiennent la logique qui sait comment les données doivent être créées.
+
+\section{Connexion : saisie jusqu'à l'écran choisi}
+\begin{enumerate}
+\item Le bouton « Se connecter » est créé dans \texttt{LoginPage.afficher}.
+\item \texttt{setOnAction} enregistre le code à exécuter après le clic ; ce code n'est pas exécuté pendant la construction du bouton.
+\item \texttt{email.getText()} et \texttt{mdp.getText()} lisent ce que l'utilisateur a saisi.
+\item \texttt{AuthService.connecter} parcourt la liste des administrateurs ; si aucun ne correspond, elle parcourt les patients.
+\item Une correspondance renvoie un objet concret stocké dans une variable de type parent \texttt{Utilisateur}.
+\item \texttt{instanceof Administrateur} vérifie le type concret. Si vrai, l'app ouvre le menu admin ; sinon, elle convertit la référence en \texttt{Patient} et ouvre l'espace patient.
+\item Si aucun compte ne correspond, une exception est levée et affichée au moyen de \texttt{Theme.alerte}.
+\end{enumerate}
+Le type général \texttt{Utilisateur} permet de recevoir deux sortes de compte avec une seule variable. Le contrôle \texttt{instanceof} est ce qui distingue le parcours dans le code actuel ; le getter \texttt{getRole()} décrit le rôle mais n'est pas utilisé ici.
+
+\section{Réservation en profondeur}
+\subsection{Paramètres et première validation}
+Le patient choisit une ligne de soin, un dentiste, un créneau, un message et le type de rendez-vous. La page transmet ces cinq valeurs à \texttt{ReservationService.reserver}. Les trois premières sont des références d'objet : elles doivent être présentes. Une comparaison à \texttt{null} détecte l'absence de sélection. La note peut être vide ; le type urgent est un booléen.
+
+\subsection{Raison du verrou et récupération de la plage courante}
+La méthode entre dans \texttt{synchronized(VERROU)} avant de vérifier si le créneau est disponible. Une autre action qui utilise le même verrou doit attendre sa sortie. Sans cette protection, deux actions presque simultanées pourraient toutes deux lire « libre », puis toutes deux créer une réservation.
+
+La page fournit un objet créneau qu'elle a affiché précédemment. Il pourrait ne plus représenter l'état actuel. La méthode reprend donc le créneau du dépôt par identifiant. Si cet identifiant ne se trouve plus dans le stockage, le service refuse la demande.
+
+\subsection{Contrôles effectués dans l'ordre}
+\begin{enumerate}
+\item Le créneau existe encore.
+\item \texttt{estReserve()} renvoie faux : il n'a pas déjà été pris.
+\item La combinaison date + heure de début est après maintenant : l'horaire n'est pas passé.
+\item \texttt{getDureeMinutes()} du créneau est au moins aussi grande que \texttt{getDureeMinutes()} de l'acte.
+\item Pour chaque rendez-vous du patient, si le rendez-vous est actif et si son créneau \texttt{chevauche} le créneau proposé, la nouvelle réservation est refusée.
+\end{enumerate}
+La comparaison des durées est une règle quantitative ; le contrôle de chevauchement est une règle temporelle. Aucune couleur d'écran ne remplace ces contrôles : même une case affichée verte est revérifiée par le service avant d'être prise.
+
+\subsection{Création et retour du rendez-vous}
+Après les vérifications, le service construit \texttt{CreneauReserve}. Le dépôt remplace alors l'ancien objet libre par le nouvel objet réservé, en gardant le même identifiant. Il construit ensuite \texttt{RendezVous} avec un nouvel id, les références patient/acte/créneau, le statut \texttt{EN\_ATTENTE}, les notes nettoyées avec \texttt{trim()}, et la valeur booléenne \texttt{urgent}. Enfin, le dépôt du rendez-vous sauvegarde les données. À la sortie du verrou, le service notifie les observateurs puis renvoie le rendez-vous à la page.
+
+La surcharge à quatre paramètres garde les anciens appels valides. Elle appelle la version complète et lui transmet \texttt{false}, donc les anciennes réservations de démonstration restent normales. La surcharge à cinq paramètres accepte le choix patient.
+
+\section{États du rendez-vous et effet sur le créneau}
+Les noms informatiques sont les constantes de l'énumération ; l'écran montre leurs libellés. Le service vérifie les transitions avant de les effectuer.
+\begin{description}[leftmargin=3.2cm,style=nextline]
+\item[Réservation] Aucun rendez-vous n'existe pour cette demande. Le service occupe le créneau et crée \texttt{EN\_ATTENTE}.
+\item[Validation] \texttt{valider} n'accepte que le statut \texttt{EN\_ATTENTE}, le remplace par \texttt{VALIDE}, puis sauvegarde.
+\item[Fin du soin] \texttt{terminer} n'accepte que \texttt{VALIDE}, le remplace par \texttt{TERMINE}, puis sauvegarde.
+\item[Annulation] \texttt{annuler} n'accepte que les statuts actifs, place \texttt{ANNULE}, et remplace le créneau réservé par un créneau libre.
+\end{description}
+Le rendez-vous annulé reste dans la liste d'historique ; le créneau libéré est un nouvel objet de disponibilité avec le même id. Cette séparation permet de conserver l'historique sans afficher comme occupée une plage annulée.
+
+\section{Comment le choix Urgence est stocké}
+Le choix Urgence ne modifie ni le soin, ni sa durée, ni la date du créneau. Il est enregistré dans le booléen \texttt{urgent} de \texttt{RendezVous}. \texttt{isUrgent()} renvoie ce booléen ; \texttt{getType()} le transforme en texte pour les tableaux. \texttt{DataStore.sauvegarder()} écrit ce booléen dans une huitième colonne de rendezvous.csv.
+
+Une ancienne ligne CSV ne contient que les sept anciennes colonnes. Le chargement teste d'abord la longueur de la ligne : si la huitième colonne manque, le calcul \texttt{l.length > 7 \&\& Boolean.parseBoolean(l[7])} donne faux. L'ordre \texttt{\&\&} est court-circuité : Java ne lit pas \texttt{l[7]} si cette colonne n'existe pas. Les anciennes réservations deviennent donc normales sans réécriture manuelle des fichiers.
+
+\section{Explication exacte des quatre couleurs}
+\begin{description}[leftmargin=3.1cm,style=nextline]
+\item[Vert, disponibilité] Les cases libres de \texttt{CreneauxPage} sont configurées avec la couleur de fond verte. Dans la liste patient, les cellules proposées sont aussi vertes.
+\item[Rouge, occupation ordinaire] Pour un créneau réservé, le planning appelle \texttt{rendezVousDuCreneau}. Si un rendez-vous existe et que son booléen urgent est faux, la case montre \texttt{RESERVE} avec fond rouge.
+\item[Orange, urgence] Le même rendez-vous est trouvé par identifiant de créneau. Si \texttt{isUrgent()} est vrai, la case montre \texttt{URGENCE} avec fond orange. Le choix Urgence du formulaire patient est aussi orange.
+\item[Bleu, choix courant] Le \texttt{buttonCell} du ComboBox patient met en bleu la valeur actuellement choisie dans la liste de créneaux. Cette couleur indique une sélection, pas un état de réservation.
+\end{description}
+Les couleurs sont réglées par \texttt{setStyle} avec des déclarations CSS JavaFX. Par exemple \texttt{-fx-background-color: \#C62828} donne un fond rouge. Le texte blanc améliore le contraste. Le planning n'utilise pas une légende séparée ; le texte LIBRE/RESERVE/URGENCE et la couleur sont affichés ensemble.
+
+\section{Cycle de vie des cellules JavaFX}
+\texttt{ComboBox} réutilise des objets cellule pour dessiner les options. JavaFX appelle \texttt{updateItem(item, empty)} chaque fois qu'une cellule doit afficher un autre objet. La méthode appelle d'abord \texttt{super.updateItem} pour laisser la classe mère actualiser son état. Ensuite elle efface le texte si la cellule est vide ; sinon elle prend \texttt{item.toString()}. Enfin elle applique le style.
+
+Le \texttt{cellFactory} s'applique aux options visibles quand la liste est ouverte. Le \texttt{buttonCell} s'applique à la partie fermée du ComboBox qui montre l'option sélectionnée. Ils ont deux fonctions différentes : dans ce code, les options libres sont vertes et le créneau choisi est bleu.
+
+\section{Chargement des fichiers CSV, étape par étape}
+\begin{enumerate}
+\item \texttt{DataStore.getInstance()} crée l'unique magasin ; le constructeur appelle \texttt{charger()}.
+\item \texttt{lireFichier} lit chaque ligne et renvoie un tableau de chaînes. Le séparateur \texttt{;} est l'interface de stockage ; les lignes d'en-tête sont ignorées.
+\item Les valeurs textuelles sont transformées en types Java : \texttt{Long.parseLong}, \texttt{Double.parseDouble}, \texttt{Integer.parseInt}, \texttt{LocalDate.parse} et \texttt{LocalTime.parse}.
+\item Les listes de dentistes, patients et actes sont construites avant celles qui les référencent.
+\item Des \texttt{HashMap<Long, Objet>} associent chaque identifiant à l'objet en mémoire. Cette table rend la recherche par id pratique.
+\item Les créneaux relient l'id dentiste au véritable objet dentiste. Une date de réservation vide signifie créneau libre ; une date présente signifie créneau réservé.
+\item Les rendez-vous trouvent leur patient, leur acte et leur créneau par id. Les rendez-vous actifs réutilisent le même objet créneau réservé que la liste des créneaux ; les statuts historiques reçoivent une représentation réservée séparée.
+\item Le compteur d'id est ajusté au plus grand id trouvé, pour que le prochain nouvel objet ne réutilise pas un ancien numéro.
+\end{enumerate}
+
+\section{Sauvegarde : transformation inverse}
+\texttt{sauvegarder()} parcourt chaque collection et construit une ligne de texte par objet. L'ordre des valeurs correspond exactement à l'ordre annoncé par la première ligne du CSV. Les dates sont converties en texte avec \texttt{toString()} ; lors d'une prochaine lecture, les méthodes \texttt{parse} les reconstruisent.
+
+\begin{description}[leftmargin=3.6cm,style=nextline]
+\item[Acte] \texttt{id;code;libelle;tarif;dureeMinutes}.
+\item[Créneau] \texttt{id;dentisteId;date;heureDebut;heureFin;dateReservation}.
+\item[Rendez-vous] \texttt{id;patientId;acteId;creneauId;dateReservation;statut;notes;urgent}.
+\end{description}
+Pour un champ textuel facultatif, \texttt{texte} convertit \texttt{null} en vide. Il remplace les caractères de séparation dangereux pour éviter de décaler les colonnes. \texttt{FileWriter} écrit le fichier ; \texttt{BufferedWriter} regroupe les écritures ; \texttt{newLine()} termine chaque ligne.
+
+\section{Pourquoi utiliser un dépôt ?}
+Une page n'écrit pas elle-même une ligne dans un CSV. Elle demande au service une action ; le service appelle un dépôt spécialisé. Celui-ci choisit la liste correcte dans \texttt{DataStore}, modifie cette liste, puis sauvegarde. Cela crée un chemin unique pour les données et permet aux services d'appliquer leurs contrôles avant qu'une modification ne soit permanente.
+
+Par exemple \texttt{ActeService.supprimer(acte)} vérifie d'abord que l'acte n'est pas référencé par un rendez-vous ; seulement ensuite, \texttt{ActeRepository.supprimer} l'enlève de la collection et déclenche la sauvegarde générale.
+
+\section{Fonctions des écrans CRUD}
+Chaque écran de gestion suit le même modèle, mais manipule un autre type de données.
+\begin{enumerate}
+\item Les champs JavaFX sont conservés comme attributs de page pour que tous les boutons y accèdent.
+\item Les colonnes sont configurées avec des noms de propriétés. Par exemple le nom \texttt{nom} correspond au getter \texttt{getNom()}.
+\item Le clic sur une ligne lit la sélection via \texttt{getSelectionModel().getSelectedItem()} et copie ses propriétés dans le formulaire.
+\item Le bouton Ajouter lit \texttt{getText()}, convertit les valeurs numériques si nécessaire, et appelle le service.
+\item Le bouton Modifier transmet aussi la ligne sélectionnée afin que le service sache quel objet mettre à jour.
+\item Le bouton Supprimer transmet l'objet choisi. Le service peut refuser l'opération s'il existe des liens.
+\item Après succès, \texttt{actualiser()} remplace les éléments de la table par la liste actuelle.
+\item Un \texttt{catch} affiche les messages de validation. Dans l'écran Actes, la conversion numérique possède aussi un catch propre aux erreurs de format.
+\end{enumerate}
+
+\section{Planning hebdomadaire : calcul des lignes et colonnes}
+La grille admin réserve une colonne zéro aux heures et six colonnes aux jours. Les jours vont de lundi à samedi. La ligne zéro porte la date ; vingt lignes sous celle-ci représentent vingt intervalles d'une demi-heure, de 8 h à 18 h.
+
+Pour chaque créneau, le code calcule le numéro de jour et l'heure de début. Il repère un créneau existant avec égalité de date et d'heure. Sans objet trouvé, la case est un bouton plus qui tente de créer une plage de trente minutes. Avec un objet libre, la case peut le supprimer. Avec un objet réservé, la page recherche son rendez-vous et choisit le texte/couleur selon l'indicateur d'urgence.
+
+Le paramètre \texttt{jour} ou \texttt{heure} capturé par la lambda correspond à la case actuellement dessinée. Lorsque l'utilisateur clique plus tard, Java utilise ces valeurs pour modifier précisément cette case. Après l'action, \texttt{remplir()} reconstruit l'affichage à partir des données à jour.
+
+\section{PDF : objets, ordre et ressources}
+\texttt{FicheService.exporterPdf} commence par contrôler l'entrée. Puis il crée un \texttt{PDDocument}, construit un \texttt{PDPage}, l'ajoute au document et crée un \texttt{PDPageContentStream}. \texttt{beginText()} ouvre la séquence de texte ; \texttt{setFont} choisit la police et sa taille ; \texttt{newLineAtOffset} déplace le point de départ ; \texttt{showText} écrit le texte. Enfin \texttt{endText()} termine le texte, le flux est fermé, le document est enregistré et fermé.
+
+L'écran ne crée pas le PDF lui-même. \texttt{Theme.fiche} demande d'abord le chemin grâce à \texttt{FileChooser}. Si l'utilisateur annule, le fichier vaut \texttt{null} et le traitement retourne sans rien faire. Sinon, l'interface appelle le service et affiche soit le chemin réussi, soit une alerte d'erreur.
+
+\section{Cartographie : qui appelle quoi ?}
+\begin{longtable}{p{0.27\textwidth}p{0.31\textwidth}p{0.32\textwidth}}
+\textbf{Événement} & \textbf{Écran / méthode} & \textbf{Suite principale} \\\hline
+Lancement & \texttt{Launcher.main} & Données initiales puis \texttt{MainApp.start} \\
+Connexion & \texttt{LoginPage.afficher} & \texttt{AuthService.connecter}, puis menu ou espace patient \\
+Ajouter un patient & \texttt{PatientsPage.afficher} & \texttt{PatientService.ajouter}, dépôt, CSV \\
+Choisir le dentiste & \texttt{PatientPage.afficher} & \texttt{CreneauService.listerLibres} \\
+Réserver normal/urgence & \texttt{PatientPage.afficher} & \texttt{ReservationService.reserver}, rendez-vous, CSV \\
+Valider un rendez-vous & \texttt{RendezVousPage.afficher} & \texttt{ReservationService.valider}, statut et CSV \\
+Annuler un rendez-vous & page patient ou admin & \texttt{ReservationService.annuler}, rendez-vous et créneau \\
+Afficher couleur urgence & \texttt{CreneauxPage.remplir} & recherche rendez-vous par créneau, lecture de \texttt{isUrgent()} \\
+Créer fiche PDF & bouton fiche & \texttt{Theme.fiche}, puis \texttt{FicheService.exporterPdf} \\
+\end{longtable}
+
+\section{Erreurs fréquentes en lisant le projet}
+\begin{description}[leftmargin=3.4cm,style=nextline]
+\item[Confondre service et dépôt] Le service décide si l'opération est autorisée ; le dépôt sait dans quelle liste lire ou écrire.
+\item[Confondre affichage et état métier] Le texte rouge/vert/orange/bleu ne détermine pas si une réservation est valide. Le service refait les contrôles sur l'objet stocké.
+\item[Confondre rendez-vous et créneau] Un créneau représente une disponibilité horaire ; un rendez-vous représente la demande d'un patient associée à un soin et à ce créneau.
+\item[Confondre état et urgence] \texttt{VALIDE} ou \texttt{ANNULE} est un état de cycle de vie. \texttt{urgent} est une propriété différente du rendez-vous.
+\item[Confondre type primitif et objet] \texttt{boolean} ne peut pas être \texttt{null} ; \texttt{Boolean} pourrait l'être. Ici l'indicateur urgent est primitif et vaut toujours vrai ou faux.
+\item[Oublier une nouvelle colonne CSV] Quand on ajoute une propriété persistante, il faut modifier constructeur/lecture et sauvegarde. Ici le chargement protège aussi les anciens fichiers où la colonne manque.
+\item[Penser qu'un bouton exécute son lambda tout de suite] La lambda est enregistrée lors de la construction ; elle s'exécute seulement lors de l'événement JavaFX.
+\end{description}
+
+\chapter{Résumé de tous les fichiers Java}
+Ce catalogue confirme le périmètre source couvert par ce guide.
+\begin{longtable}{p{0.46\textwidth}p{0.46\textwidth}}
+\textbf{Package / fichier} & \textbf{Responsabilité principale} \\\hline
+\texttt{ma.emi.cabinet/Launcher.java} & Démarrage de l'application. \\
+\texttt{exception/AuthentificationException.java} & Erreur de connexion. \\
+\texttt{exception/CabinetException.java} & Exception métier parent. \\
+\texttt{exception/ReservationException.java} & Erreur de réservation. \\
+\texttt{exception/ValidationException.java} & Erreur de saisie. \\
+\texttt{model/Acte.java} & Soin, tarif et durée. \\
+\texttt{model/Administrateur.java} & Compte administrateur. \\
+\texttt{model/Creneau.java} & Créneau libre de base. \\
+\texttt{model/CreneauReserve.java} & Créneau réservé. \\
+\texttt{model/Dentiste.java} & Fiche de dentiste. \\
+\texttt{model/Patient.java} & Compte et données patient. \\
+\texttt{model/RendezVous.java} & Réservation et type normal/urgent. \\
+\texttt{model/Utilisateur.java} & Données communes aux comptes. \\
+\texttt{model/enums/StatutRendezVous.java} & États permis d'un rendez-vous. \\
+\texttt{persistence/AbstractRepository.java} & Opérations génériques de dépôt. \\
+\texttt{persistence/ActeRepository.java} & Accès aux actes. \\
+\texttt{persistence/AdministrateurRepository.java} & Accès aux administrateurs. \\
+\texttt{persistence/CreneauRepository.java} & Accès aux créneaux. \\
+\texttt{persistence/DataStore.java} & Listes mémoire et fichiers CSV. \\
+\texttt{persistence/DentisteRepository.java} & Accès aux dentistes. \\
+\texttt{persistence/PatientRepository.java} & Accès aux patients. \\
+\texttt{persistence/RendezVousRepository.java} & Accès aux rendez-vous. \\
+\texttt{persistence/Repository.java} & Contrat CRUD générique. \\
+\texttt{service/ActeService.java} & Règles des soins. \\
+\texttt{service/AuthService.java} & Connexion et unicité email. \\
+\texttt{service/CreneauService.java} & Règles des horaires. \\
+\texttt{service/DentisteService.java} & Règles des dentistes. \\
+\texttt{service/DonneesInitiales.java} & Données de démonstration. \\
+\texttt{service/EcouteurReservation.java} & Contrat d'observateur. \\
+\texttt{service/FicheService.java} & Génération PDF. \\
+\texttt{service/PatientService.java} & Règles des patients. \\
+\texttt{service/ReservationService.java} & Réservation et transitions de statut. \\
+\texttt{ui/ActesPage.java} & Écran des soins. \\
+\texttt{ui/CreneauxPage.java} & Planning hebdomadaire et couleurs. \\
+\texttt{ui/DentistesPage.java} & Écran des dentistes. \\
+\texttt{ui/LoginPage.java} & Écran de connexion. \\
+\texttt{ui/MainApp.java} & Fenêtre JavaFX initiale. \\
+\texttt{ui/MenuPage.java} & Menu administrateur. \\
+\texttt{ui/PatientPage.java} & Réservation patient et choix urgence. \\
+\texttt{ui/PatientsPage.java} & Écran des patients. \\
+\texttt{ui/RendezVousPage.java} & Traitement des rendez-vous. \\
+\texttt{ui/Theme.java} & Composants visuels communs. \\
+\texttt{util/Validation.java} & Vérification de texte obligatoire. \\
+\end{longtable}
+
+\chapter{Conseil pour suivre une fonctionnalité dans le code}
+Pour comprendre un bouton, cherchez son \texttt{setOnAction} dans la classe \texttt{ui}. Suivez l'appel au service. Dans le service, repérez les \texttt{if} de contrôle, puis les appels au dépôt. Dans le dépôt, suivez la collection du \texttt{DataStore}. Enfin, consultez \texttt{sauvegarder()} pour savoir quelles colonnes deviennent persistantes. Pour comprendre un texte de tableau, cherchez la colonne dans la page, le nom de propriété passé à \texttt{Theme.colonne}, puis le getter correspondant dans le modèle.
+
+Ce guide explique le code présent et ses choix pédagogiques. Pour une application réelle, les mots de passe ne devraient pas être stockés en clair ; des protections supplémentaires seraient également nécessaires pour la confidentialité et l'accès aux données des patients.
+\end{document}
